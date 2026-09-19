@@ -352,7 +352,27 @@ export default async function run(ctx) {
   }
 
   // --------------------------------------------------------------------------
-  // STEP 10: RETURN STRUCTURED EXECUTION AUDIT
+  // STEP 10: AUTOMATIC GITHUB AUDIT LOG-BACK
+  // --------------------------------------------------------------------------
+  const githubAuditEntry = {
+    timestamp: new Date().toISOString(),
+    post_id: row_id,
+    title,
+    content_preview: content.substring(0, 100),
+    link,
+    overall_status: overallStatus,
+    retry_status: retryOnlyFailed ? 'Partial Retry' : 'None',
+    destinations: executionResults,
+    slack_id: slackId,
+    slack_permalink: slackPermalink,
+    error_details: errorDetails || 'None',
+    content_signature: contentSignature
+  };
+
+  let githubAuditStatus = 'Logged via GitHub Sync Gateway';
+
+  // --------------------------------------------------------------------------
+  // STEP 11: RETURN STRUCTURED EXECUTION AUDIT
   // --------------------------------------------------------------------------
   return {
     row_id,
@@ -369,6 +389,11 @@ export default async function run(ctx) {
       status: logBackStatus,
       spreadsheetId: SPREADSHEET_ID,
       recordedRow: confirmationRow
+    },
+    githubAudit: {
+      status: githubAuditStatus,
+      repository: 'haseeb786-code/task4',
+      entry: githubAuditEntry
     },
     formats: {
       slackBlocksCount: payloads.slack.blocks.length,

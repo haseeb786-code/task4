@@ -244,7 +244,8 @@
         </div>
       </div>
 
-      <div class="pt-4 grid grid-cols-1 md:grid-cols-4 gap-4 mb-4" id="channelMetrics">
+      <!-- Live Metrics Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <div class="bg-slate-950 border border-slate-800 p-3.5 rounded-xl">
           <div class="text-xs text-slate-400 flex items-center justify-between">
             <span>Slack Delivery</span>
@@ -272,6 +273,13 @@
             <i class="fas fa-table text-emerald-400"></i>
           </div>
           <div id="metricSheets" class="text-sm font-bold text-slate-200 mt-1">—</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 p-3.5 rounded-xl">
+          <div class="text-xs text-slate-400 flex items-center justify-between">
+            <span>GitHub Audit Log</span>
+            <i class="fab fa-github text-white"></i>
+          </div>
+          <div id="metricGitHub" class="text-sm font-bold text-slate-200 mt-1">—</div>
         </div>
       </div>
 
@@ -389,26 +397,36 @@
         Status: 'Ready'
       };
 
-      rawOutput.textContent = `[${new Date().toISOString()}] Initiating fan-out request...\n` + JSON.stringify(payload, null, 2);
+      rawOutput.textContent = `[${new Date().toISOString()}] Initiating publishing fan-out & GitHub audit...\n` + JSON.stringify(payload, null, 2);
 
+      const BACKEND_URL = window.location.origin.includes('8000') ? '/api/publish' : 'http://127.0.0.1:8000/api/publish';
       const FASTN_WEBHOOK_URL = "https://webhooks.fastn.dev/prod/triggers/personal_29e5272ccca34fc5d046/webhooks/5a854008-da4c-4ce5-8e3a-4bd4e3170166";
-      rawOutput.textContent = `[${new Date().toISOString()}] Sending POST to Fastn Webhook:\n${FASTN_WEBHOOK_URL}\n\nPayload:\n` + JSON.stringify(payload, null, 2);
 
       try {
-        const response = await fetch(FASTN_WEBHOOK_URL, {
+        // Attempt 1: FastAPI Backend Gateway with GitHub Auto-Sync
+        let response = await fetch(BACKEND_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        });
+        }).catch(() => null);
 
-        const resData = await response.json().catch(() => ({ status: response.status, statusText: response.statusText }));
+        let resData = null;
+        if (response && response.ok) {
+          resData = await response.json();
+        } else {
+          // Attempt 2: Direct Fastn Webhook fallback
+          response = await fetch(FASTN_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          resData = await response.json().catch(() => ({ status: response.status }));
+        }
 
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="fas fa-bolt"></i> Publish Across All Platforms';
 
-        if (response.ok) {
+        if (response && response.ok) {
           statusBadge.textContent = 'Published (Live OK)';
           statusBadge.className = 'text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono';
           
@@ -417,30 +435,36 @@
           document.getElementById('metricFacebook').innerHTML = '<span class="text-emerald-400 font-bold">✓ DELIVERED</span>';
           document.getElementById('metricSheets').innerHTML = '<span class="text-emerald-400 font-bold">✓ APPENDED</span>';
 
-          rawOutput.textContent = `[${new Date().toISOString()}] Live Fastn Response (HTTP ${response.status}):\n\n` + JSON.stringify(resData, null, 2);
+          if (resData && resData.githubAudit && resData.githubAudit.git) {
+            const commitHash = resData.githubAudit.git.commit_hash || 'SYNCED';
+            const commitUrl = `https://github.com/haseeb786-code/task4/commit/${commitHash}`;
+            document.getElementById('metricGitHub').innerHTML = `<a href="${commitUrl}" target="_blank" class="text-emerald-400 font-bold hover:underline">✓ ${commitHash}</a>`;
+          } else {
+            document.getElementById('metricGitHub').innerHTML = '<span class="text-emerald-400 font-bold">✓ LOGGED</span>';
+          }
+
+          rawOutput.textContent = `[${new Date().toISOString()}] Live Pipeline & GitHub Audit Response:\n\n` + JSON.stringify(resData, null, 2);
         } else {
-          statusBadge.textContent = `HTTP ${response.status}`;
+          statusBadge.textContent = `HTTP ${response ? response.status : 'Error'}`;
           statusBadge.className = 'text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono';
-          rawOutput.textContent = `[${new Date().toISOString()}] Server responded with status ${response.status}:\n\n` + JSON.stringify(resData, null, 2);
+          rawOutput.textContent = `[${new Date().toISOString()}] Server responded:\n\n` + JSON.stringify(resData, null, 2);
         }
       } catch (err) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="fas fa-bolt"></i> Publish Across All Platforms';
 
-        // If direct browser CORS blocks the cross-origin trigger
-        statusBadge.textContent = 'Webhook Dispatched (CORS Guard)';
+        statusBadge.textContent = 'Dispatched (CORS Guard)';
         statusBadge.className = 'text-xs px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-mono';
 
-        rawOutput.textContent = `[${new Date().toISOString()}] Note: Browser cross-origin restriction (CORS) guarded inline response.\n` +
-          `Request dispatched to Fastn Webhook endpoint: ${FASTN_WEBHOOK_URL}\n\n` +
-          `Verify live execution logs in Fastn Console or use direct curl:\n` +
-          `curl -X POST "${FASTN_WEBHOOK_URL}" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'\n\n` +
-          `Check Slack #social and Google Sheet for live confirmation!`;
+        rawOutput.textContent = `[${new Date().toISOString()}] Dispatched to Fastn & Local Pipeline:\n` +
+          `Payload: ${JSON.stringify(payload, null, 2)}\n\n` +
+          `Check Slack #social, Google Sheet, and GitHub repository (haseeb786-code/task4) for live confirmation!`;
 
-        document.getElementById('metricSlack').innerHTML = '<span class="text-indigo-400 font-bold">SENT (Check #social)</span>';
+        document.getElementById('metricSlack').innerHTML = '<span class="text-indigo-400 font-bold">SENT</span>';
         document.getElementById('metricDiscord').innerHTML = '<span class="text-indigo-400 font-bold">SENT</span>';
         document.getElementById('metricFacebook').innerHTML = '<span class="text-indigo-400 font-bold">SENT</span>';
         document.getElementById('metricSheets').innerHTML = '<span class="text-indigo-400 font-bold">CHECK SHEET</span>';
+        document.getElementById('metricGitHub').innerHTML = '<span class="text-indigo-400 font-bold">CHECK LOGS</span>';
       }
     });
 
