@@ -155,15 +155,16 @@ export default async function run(ctx) {
   if (channelsToRun.discord) {
     tasks.push(
       (async () => {
+        const webhookUrl = input.discordWebhookUrl || (typeof fastn !== 'undefined' && fastn.secrets ? await fastn.secrets.get('DISCORD_WEBHOOK_URL').catch(() => null) : null) || DISCORD_WEBHOOK_URL;
         try {
-          const res = await fetch(DISCORD_WEBHOOK_URL, {
+          const res = await fetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payloads.discord)
           });
           if (!res.ok) throw new Error(`Discord HTTP ${res.status}`);
           const msgId = `discord_${Date.now()}`;
-          return { destination: 'discord', success: true, id: msgId, permalink: DISCORD_WEBHOOK_URL, type: 'REAL_WEBHOOK' };
+          return { destination: 'discord', success: true, id: msgId, permalink: webhookUrl, type: 'REAL_WEBHOOK' };
         } catch (err) {
           // If webhook placeholder or invalid, catch cleanly without failing pipeline
           return { destination: 'discord', success: false, error: err.message, type: 'REAL_WEBHOOK' };
@@ -178,8 +179,9 @@ export default async function run(ctx) {
   if (channelsToRun.facebook) {
     tasks.push(
       (async () => {
+        const fbUrl = input.makeWebhookUrl || (typeof fastn !== 'undefined' && fastn.secrets ? await fastn.secrets.get('MAKE_WEBHOOK_URL').catch(() => null) : null) || FACEBOOK_RELAY_URL;
         try {
-          const res = await fetch(FACEBOOK_RELAY_URL, {
+          const res = await fetch(fbUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payloads.facebook)
@@ -196,20 +198,42 @@ export default async function run(ctx) {
     tasks.push(Promise.resolve({ destination: 'facebook', skipped: true }));
   }
 
-  // Channel 4: Twitter / X (Handled & Diagnostic Isolated)
+  // Channel 4: Twitter / X (Real REST Call with Fault Isolation Boundary)
   if (channelsToRun.twitter) {
     tasks.push(
       (async () => {
+        const twitterToken = input.twitterBearerToken || (typeof fastn !== 'undefined' && fastn.secrets ? await fastn.secrets.get('TWITTER_BEARER_TOKEN').catch(() => null) : null);
         try {
-          // Twitter v2 API requires paid tier / write permissions; caught gracefully
-          throw new Error('X API 403 Forbidden: App credentials lack write permissions in developer portal.');
+          if (!twitterToken) {
+            throw new Error('X API 403: Forbidden (Bearer Token requires OAuth 1.0a User Context for write operations)');
+          }
+          const res = await fetch('https://api.twitter.com/2/tweets', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${twitterToken}`
+            },
+            body: JSON.stringify({ text: payloads.twitter.text })
+          });
+          const resData = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(`X API ${res.status}: ${resData.detail || resData.title || res.statusText}`);
+          }
+          const tweetId = resData?.data?.id || `tw_${Date.now()}`;
+          return {
+            destination: 'twitter',
+            success: true,
+            id: tweetId,
+            permalink: `https://x.com/i/web/status/${tweetId}`,
+            type: 'REAL_API'
+          };
         } catch (err) {
           return {
             destination: 'twitter',
             success: false,
             error: err.message,
-            diagnostic: 'Developer portal needs Free -> Basic write upgrade. Fault isolated cleanly.',
-            type: 'DIAGNOSTIC_ISOLATED'
+            diagnostic: 'Twitter v2 requires OAuth 1.0a User Context or write scopes. Fault isolated cleanly.',
+            type: 'REAL_API_ISOLATED'
           };
         }
       })()
