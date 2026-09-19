@@ -144,6 +144,12 @@ curl -X POST "https://webhooks.fastn.dev/prod/triggers/personal_29e5272ccca34fc5
 2. Add a new row with `Status = "Ready"`.
 3. The scheduled polling handler (`handleScheduledSheetPolling`) scans for pending rows, executes the parallel fan-out, and updates column F to `"Published"` with live post IDs and permalinks.
 
+### Option D: Trigger via Interactive Web Frontend Dashboard
+1. Open [`index.html`](./index.html) directly in any modern browser (or serve locally via `npx serve` or Python HTTP server).
+2. Fill out post Title, Body, Image URL, Target Link, and Hashtags (or click "Load Shoutout Sample").
+3. Inspect the live **Audience-Aware Previews** for Slack (Block Kit), Discord (Embed), Twitter (280-char counter), and LinkedIn.
+4. Click **Publish Across All Platforms** to fire the fan-out and watch real-time delivery status badges update live.
+
 ---
 
 ## 6. Submission Details
